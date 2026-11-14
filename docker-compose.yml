@@ -1,0 +1,409 @@
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NETWORKS
+# ─────────────────────────────────────────────────────────────────────────────
+networks:
+  uniadmit-network:
+    driver: bridge
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VOLUMES
+# ─────────────────────────────────────────────────────────────────────────────
+volumes:
+  auth-postgres-data:
+  profile-postgres-data:
+  admission-postgres-data:
+  document-postgres-data:
+  minio-data:
+  rabbitmq-data:
+  prometheus-data:
+  grafana-data:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SERVICES
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # DATABASES
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  auth-postgres:
+    image: postgres:16-alpine
+    container_name: auth-postgres
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - auth-postgres-data:/var/lib/postgresql/data
+    networks:
+      - uniadmit-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d auth_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  profile-postgres:
+    image: postgres:16-alpine
+    container_name: profile-postgres
+    environment:
+      POSTGRES_DB: profile_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - profile-postgres-data:/var/lib/postgresql/data
+    networks:
+      - uniadmit-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d profile_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  admission-postgres:
+    image: postgres:16-alpine
+    container_name: admission-postgres
+    environment:
+      POSTGRES_DB: admission_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5435:5432"
+    volumes:
+      - admission-postgres-data:/var/lib/postgresql/data
+    networks:
+      - uniadmit-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d admission_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  document-postgres:
+    image: postgres:16-alpine
+    container_name: document-postgres
+    environment:
+      POSTGRES_DB: document_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5436:5432"
+    volumes:
+      - document-postgres-data:/var/lib/postgresql/data
+    networks:
+      - uniadmit-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d document_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # RABBITMQ
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - uniadmit-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # MINIO
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  minio:
+    image: minio/minio
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - uniadmit-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # MONITORING
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+      - ./monitoring/prometheus.yaml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - uniadmit-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - uniadmit-network
+    depends_on:
+      - prometheus
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # EUREKA SERVER
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  eureka-server:
+    build:
+      context: ./uni-admit-backend
+      dockerfile: eurekaserver/Dockerfile
+      args:
+        SERVICE_NAME: eurekaserver
+    container_name: eureka-server
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8070:8070"
+    networks:
+      - uniadmit-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8070/actuator/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # AUTH SERVICE
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  auth-service:
+    build:
+      context: ./uni-admit-backend
+      dockerfile: auth-service/Dockerfile
+      args:
+        SERVICE_NAME: auth-service
+    container_name: auth-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8081:8081"
+    networks:
+      - uniadmit-network
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8081/actuator/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PROFILE SERVICE
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  profile-service:
+    build:
+      context: ./uni-admit-backend
+      dockerfile: profile-service/Dockerfile
+      args:
+        SERVICE_NAME: profile-service
+    container_name: profile-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8082:8082"
+    networks:
+      - uniadmit-network
+    depends_on:
+      profile-postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/actuator/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ADMISSION SERVICE
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  admission-service:
+    build:
+      context: ./uni-admit-backend
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: admission-service
+    container_name: admission-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8083:8083"
+    networks:
+      - uniadmit-network
+    depends_on:
+      admission-postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8083/actuator/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # DOCUMENT SERVICE
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  document-service:
+    build:
+      context: ./uni-admit-backend
+      dockerfile: document-service/Dockerfile
+      args:
+        SERVICE_NAME: document-service
+    container_name: document-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8084:8084"
+    networks:
+      - uniadmit-network
+    depends_on:
+      document-postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8084/actuator/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # NOTIFICATION SERVICE
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  notification-service:
+    build:
+      context: ./uni-admit-backend
+      dockerfile: notification-service/Dockerfile
+      args:
+        SERVICE_NAME: notification-service
+    container_name: notification-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8086:8086"
+    networks:
+      - uniadmit-network
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8086/actuator/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ADMIN SERVICE
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  admin-service:
+    build:
+      context: ./uni-admit-backend
+      dockerfile: admin-service/Dockerfile
+      args:
+        SERVICE_NAME: admin-service
+    container_name: admin-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8087:8087"
+    networks:
+      - uniadmit-network
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8087/actuator/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # API GATEWAY
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  api-gateway:
+    build:
+      context: ./uni-admit-backend
+      dockerfile: api-gateway/Dockerfile
+      args:
+        SERVICE_NAME: api-gateway
+    container_name: api-gateway
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8080:8080"
+    networks:
+      - uniadmit-network
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10

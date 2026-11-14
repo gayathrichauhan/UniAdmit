@@ -1,0 +1,78 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: admission-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5435/admission_db
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8070/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      profileService:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+  bulkhead:
+    instances:
+      admissionSubmit:
+        max-concurrent-calls: 200
+        max-wait-duration: 2000ms
+  retry:
+    instances:
+      profileService:
+        max-attempts: 3
+        wait-duration: 500ms
+  timelimiter:
+    instances:
+      profileService:
+        timeout-duration: 5s
+
+spring.cloud.openfeign.circuitbreaker.enabled: true
+
+logging:
+  level:
+    com.example.admissionservice: DEBUG
