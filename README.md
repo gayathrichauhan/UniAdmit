@@ -109,7 +109,7 @@ The frontend is developed using Next.js, React, and TypeScript, with Zustand for
 
 Uni-Admit follows a distributed microservices architecture. The frontend communicates with backend services through a centralized API Gateway rather than calling individual microservices directly.
 
-![Uni-Admit Architecture](docs/images/architecture.png)
+![Uni-Admit Architecture](docs/images/SystemArchitecture.png)
 
 
 *The diagram represents the major architectural components and their responsibilities. It is a conceptual view, not a complete representation of every internal call or configuration.*
